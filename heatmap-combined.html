@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<html>
+  <head>
+    <style>
+      rect.bordered {
+        stroke: #E6E6E6;
+        stroke-width:2px;   
+      }
+
+      text {
+        font-size: 14pt;
+        font-family: Helvetica;
+      }
+
+      div{
+        /*display:inline-block; */
+        padding:0px;
+        margin:0px;
+      }
+
+      text.mono {
+        font-size: 9pt;
+        font-family: Helvetica;
+        fill: #aaa;
+      }
+
+      text.axis-workweek {
+        fill: #000;
+      }
+
+      text.axis-worktime {
+        fill: #000;
+      }
+
+      .tooltip {
+        position: absolute;
+        text-align: center;
+        width: 60px;
+        height: 12px;
+        padding: 8px;
+        margin-top: -20px;
+        font: 10px sans-serif;
+        background: #ddd;
+        pointer-events: none;
+      }
+
+      /*https://www.w3schools.com/css/css3_buttons.asp*/
+      .dataset-button {
+        background-color: #08306B; 
+        border: 2px solid #08306B;
+        color: white;
+        text-align: center;
+        text-decoration: none;
+        font-family: Helvetica;
+        display: inline-block;
+        border-radius: 8px;
+        font-size: 20px;
+      }
+
+    </style>
+    <script src="https://d3js.org/d3.v5.js"></script>
+  </head>
+  <body>
+  	<text><b>Rideshare and Taxi Activity in Chicago By Time of Day & Day of Week</b></text> <br>
+  	<text>Data is adapted from the Chicago Data Portal. Data covers October 2019.</text>
+  	<br><br>
+    <div id="dataset-picker"></div>
+    <div id="charts1"></div>
+    <div id="charts2"></div>
+    <script type="text/javascript">
+
+     //TEMPLATE: http://bl.ocks.org/tjdecke/5558084
+
+
+     //SETUP
+      var margin = { top: 75, right: 0, bottom: 0, left: 30 },
+          width = 720 - margin.left - margin.right,
+          height = 300 - margin.top - margin.bottom,
+          //size of the boxes within the heatmap
+          gridSize = Math.floor(width / 24),
+          //size of legend boxes
+          legendElementWidth = gridSize*2,
+          //color scheme 
+          color = d3.scaleSequential(d3.interpolateBlues),
+          //day and time labels
+          days = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"],
+          times = ["1a", "2a", "3a", "4a", "5a", "6a", "7a", "8a", "9a", "10a", "11a", "12a", "1p", "2p", "3p", "4p", "5p", "6p", "7p", "8p", "9p", "10p", "11p", "12p"],
+          //define datasets
+          rideshare_count = "https://raw.githubusercontent.com/mscheriger/DataVizProject/master/rideshare_num_rides_by_day_hour.csv",
+          taxi_count = "https://raw.githubusercontent.com/mscheriger/DataVizProject/master/taxi_num_rides_by_day_hour.csv",
+          rideshare_fare = "https://raw.githubusercontent.com/mscheriger/DataVizProject/master/rideshare_fare_by_day_hour.csv",
+          taxi_fare = "https://raw.githubusercontent.com/mscheriger/DataVizProject/master/taxi_fare_by_day_hour.csv",
+          rideshare_dist = "https://raw.githubusercontent.com/mscheriger/DataVizProject/master/rideshare_dist_by_day_hour.csv",
+          taxi_dist = "https://raw.githubusercontent.com/mscheriger/DataVizProject/master/taxi_dist_by_day_hour.csv",
+          //define legend bucket cutoffs
+          count_legend = ["0", "0.003", "0.005", "0.007", "0.010", "0.012", "0.014"];
+          fare_legend = ["10.26", "13.05", "15.83", "18.62", "21.41", "24.19", "26.98"];
+          dist_legend = ["2.17", "4.04", "5.91", "7.79", "9.66", "11.53", "13.4"];
+
+      //legend position
+      var legendPos = {
+                x: 0,
+                y: 0,
+                width: 10,
+                height: height-(gridSize/2)
+            };
+
+      //rideshare SVG
+      var svg = d3.select("#charts1").append("svg")
+          .attr("width", width + margin.left + margin.right)
+          .attr("height", height + margin.top + margin.bottom)
+          .append("g")
+          .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+      //taxi SVG
+      var svg2 = d3.select("#charts2").append("svg")
+          .attr("width", width + margin.left + margin.right)
+          .attr("height", height + margin.top + margin.bottom)
+          .append("g")
+          .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+      //position day of the week labels - rideshares
+      var dayLabels = svg.selectAll(".dayLabel")
+          .data(days)
+          .enter().append("text")
+            .text(function (d) { return d; })
+            .attr("x", 0)
+            .attr("y", function (d, i) { return i * gridSize; })
+            .style("text-anchor", "end")
+            .attr("transform", "translate(-6," + gridSize / 1.5 + ")")
+            .attr("class", function (d, i) { return ((i >= 0 && i <= 4) ? "dayLabel mono axis axis-workweek" : "dayLabel mono axis"); });
+
+      //position day of the week labels - taxis
+      var dayLabels2 = svg2.selectAll(".dayLabel")
+          .data(days)
+          .enter().append("text")
+            .text(function (d) { return d; })
+            .attr("x", 0)
+            .attr("y", function (d, i) { return i * gridSize; })
+            .style("text-anchor", "end")
+            .attr("transform", "translate(-6," + gridSize / 1.5 + ")")
+            .attr("class", function (d, i) { return ((i >= 0 && i <= 4) ? "dayLabel mono axis axis-workweek" : "dayLabel mono axis"); });
+
+      //position hour labels - rideshares only (only need one set - they align vertically)
+      var timeLabels = svg.selectAll(".timeLabel")
+          .data(times)
+          .enter().append("text")
+            .text(function(d) { return d; })
+            .attr("x", function(d, i) { return i * gridSize; })
+            .attr("y", 0)
+            .style("text-anchor", "middle")
+            .attr("transform", "translate(" + gridSize / 2 + ", -6)")
+            .attr("class", function(d, i) { return ((i >= 7 && i <= 16) ? "timeLabel mono axis axis-worktime" : "timeLabel mono axis"); });
+
+      //titles
+          svg.append("text")
+            .attr("x", 0)             
+            .attr("y", 0 - (margin.top/3))
+            .attr("text-anchor", "left")  
+            .style("font-size", "20px") 
+            .style("font-family", "Helvetica")
+            .text("Rideshare");
+
+          svg2.append("text")
+            .attr("x", 0)             
+            .attr("y", 0 - (margin.top/4))
+            .attr("text-anchor", "left")  
+            .style("font-size", "20px") 
+            .style("font-family", "Helvetica")
+            .text("Taxi");
+
+
+      //tooltip code combined from: https://www.d3-graph-gallery.com/graph/heatmap_tooltip.html# and https://bl.ocks.org/mbostock/1087001
+      //tooltip formatting
+      var tooltip = d3.select("body")
+          .append("div")
+          .style("display", "none")
+          .attr("class", "tooltip")
+          .style("width", "60px")
+          .style("height", "40px")
+          .style("position", "absolute")
+          .style("margin-top", "-20px")
+          .style("text-align", "top")
+          .style("background-color", "white")
+          .style("opacity", ".90")
+          .style("padding", "1px");
+
+      //tooltip mouseover display functions
+      var mouseover = function(d) {
+          tooltip
+          .style("display", "inline");
+        }
+
+      var mousemove = function(d) {
+
+
+          tooltip
+            .html(days[d.day] + " " + times[d.hour]+ "<br>" + d3.format(",")(d.count) + " rides " + "<br>"+ d.value)
+            .style("left", (d3.event.pageX + 15) + "px")
+            .style("top", (d3.event.pageY + 10) + "px")
+        }
+
+      var mouseleave = function(d) {
+        tooltip.style("display", "none")
+        }
+
+      //variable containing text to display for the current data being displayed
+      var currType = "Proportion of total rides by type";
+
+      //definine the heatmap display -- takes as input the two datasets to be used (one rideshare, one taxi), the two SVgs to which they should be appended, the data type, and the legend bucket cutoff labels
+      var heatmapChart = function(rideshare, taxi, svg1, svg2, type, legendtext) {
+
+      	//load BOTH datasets - syntax via: https://stackoverflow.com/questions/21842384/importing-data-from-multiple-csv-files-in-d3
+        Promise.all([
+          d3.csv(rideshare,
+        function(d) {
+          return {
+            day: +d.day,
+            hour: +d.hour,
+            count: +d.count,
+            value: +d.prop
+          };
+        }),
+          d3.csv(taxi,
+        function(d) {
+          return {
+            day: +d.day,
+            hour: +d.hour,
+            count: +d.count,
+            value: +d.prop
+          };
+        })
+      ]).then(ready)
+
+        .then(ready);
+
+        function ready(data) {
+
+          //pull out each data set
+          var rideshare_data = data[0];
+          var taxi_data = data[1];
+
+
+          //color scale will be defined across both datasets, so must pull out the overall max/min between both
+          var overall_min = d3.min([d3.min(rideshare_data, function(d) { return d.value ;}), d3.min(taxi_data, function(d) { return d.value ;})]);
+          var overall_max = d3.max([d3.max(rideshare_data, function(d) { return d.value ;}), d3.max(taxi_data, function(d) { return d.value ;})]);
+
+
+          //colorscheme scaling
+          var colorScale = d3.scaleQuantile()
+              .domain([overall_min, overall_max])
+              .range([0,0.2,0.4,0.6,0.8,1]);
+
+
+          //make the actual heatmaps using comon color scale
+          makeCards(rideshare_data, svg1, colorScale);
+          makeCards(taxi_data, svg2, colorScale);
+
+         
+          //make legend - pull in color scaling data, set position
+          var legend = svg2.selectAll(".legend")
+              .data(colorScale.range())
+              .enter()
+              .append("g")
+              .attr("class", "legend")
+              .attr("transform", function(d, i) { return "translate(" + legendPos.x + i * legendElementWidth + "," + legendPos.height + ")"; });
+
+          //make rectangles filled in with colors from colorscale
+          legend.append("rect")
+            .attr("width", legendElementWidth)
+            .attr("height", gridSize / 2)
+            .style("fill", function(d) {return color(d);});
+
+
+          //add labels based on the current dataset type
+          var legend_text = svg2.selectAll(".legend")
+            .append("text")
+            .data(legendtext)
+            .attr("x", function(d, i) {return (legendPos.x + i);})
+            .attr("y", 0)
+            .attr("class", "mono legend-text")
+            .text(function(d, i) { return d; })
+            .style("opacity", 0)
+            .transition().duration(1250).style("opacity", 1);
+          
+        };  
+      }; //end of the heatmap function
+      
+      //function to actually draw the heatmap boxes (cards), from original template
+      function makeCards(data, svg, colorScale) {
+
+          var cards = svg.selectAll(".hour")
+              .data(data, function(d) {return d.day+':'+d.hour;});
+
+          //cards.append("title");
+
+          cards.enter().append("rect")
+              .attr("x", function(d) { return (d.hour) * gridSize; })
+              .attr("y", function(d) { return (d.day) * gridSize; })
+              .attr("rx", 4)
+              .attr("ry", 4)
+              .attr("class", "hour bordered")
+              .attr("width", gridSize)
+              .attr("height", gridSize)
+              .style("fill", function(d) { return color(colorScale(d.value)); })
+              .on("mouseover", mouseover)
+              .on("mousemove", mousemove)
+              .on("mouseleave", mouseleave);
+
+          cards.transition().duration(1250)
+              .style("fill", function(d) { return color(colorScale(d.value)); });
+
+          //cards.select("title").text(function(d) { return d.value; });
+          
+          cards.exit().remove();
+      };
+
+      //change chart description based on data type
+      //https://stackoverflow.com/questions/21843667/d3-change-text-label-when-data-updates
+      
+      function redrawText(textobj) {
+          textobj
+          .transition()
+          .duration(250)
+          .style("opacity", 0)
+          .transition().duration(1000)
+          .style("opacity", 1)
+          .text(currType)
+      }
+
+   	 //draw the default heatmap when page first opens - default is the "count" type
+      heatmapChart(rideshare_count, taxi_count, svg, svg2, "Count",count_legend);
+
+
+      //define the dataset selection area - buttons 
+      var datasetpicker = d3.select("#dataset-picker")
+      .selectAll(".dataset-button")
+      .data(["Count", "Fare", "Distance"]);
+
+      //dataset selection
+      datasetpicker.enter()
+        .append("input")
+        .attr("value", function(d){ return d })
+        .attr("type", "button")
+        .attr("class", "dataset-button")
+        .on("click", function(d) {
+          if (d == "Count") {
+            svg2.selectAll(".legend-text").transition().duration(1250).style("opacity", 0);
+            heatmapChart(rideshare_count, taxi_count, svg, svg2, "Count", count_legend);
+            currType = "Proportion of total rides by type";
+            redrawText(myText1);
+            //redrawText(myText2);
+          }
+          else if (d == "Fare") {
+            svg2.selectAll(".legend-text").transition().duration(1250).style("opacity", 0);
+            heatmapChart(rideshare_fare, taxi_fare, svg, svg2, "Fare", fare_legend);
+            currType = "Average fare ($)";
+            redrawText(myText1);
+            //redrawText(myText2);
+          }
+          else if (d == "Distance") {
+            svg2.selectAll(".legend-text").transition().duration(1250).style("opacity", 0);
+            heatmapChart(rideshare_dist, taxi_dist, svg, svg2, "Distance", dist_legend);
+            currType = "Average distance (mi.)";
+            redrawText(myText1);
+            //redrawText(myText2);
+          }
+        });
+
+        //display the current data type
+        var staticLabel = d3.select("#dataset-picker").append('text')
+            .attr("x", 0)             
+            .attr("y", 0 - (margin.top / 2))
+            .attr("text-anchor", "left")  
+            .style("font-size", "16px") 
+            .style("font-family", "Helvetica neue")
+            .text("      Currently displaying: ")
+
+        var myText1 = d3.select("#dataset-picker").append('text')
+            .attr("x", 0)             
+            .attr("y", 0 - (margin.top / 2))
+            .attr("text-anchor", "left")  
+            .style("font-size", "16px") 
+            .style("font-family", "Helvetica neue")
+            .text(currType);
+       
+
+      //Copyright (c) 2016, Tom May 
+
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+// The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+    </script>
+  </body>
+</html>
